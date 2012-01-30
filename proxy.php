@@ -1,4 +1,6 @@
 <?php 
+
+error_reporting(E_ALL & ~E_DEPRECATED) ;
  
 if( empty($_REQUEST['url']) )
 {
@@ -25,13 +27,17 @@ if( empty($_COOKIE['proxy_session_uid']) )
 	$_COOKIE['proxy_session_uid'] = md5(microtime(true).rand(0,9999999999)) ;
 	setcookie('proxy_session_uid',$_COOKIE['proxy_session_uid'],time()+24*60*60*365*10) ;
 }
+if( !defined('__DIR__') )
+{
+	define('__DIR__',dirname(__FILE__)) ;
+}
 $sUserSessionFile = __DIR__."/cookies/{$_COOKIE['proxy_session_uid']}.txt" ;
 if( !is_dir(__DIR__."/cookies") )
 {
 	mkdir(__DIR__."/cookies",0777) ;
 }
 
-$_REQUEST['url'] = trim($_REQUEST['url']) ;
+$_REQUEST['url'] = trim(base64_decode($_REQUEST['url'])) ;
 
 $aAccess = curl_init() ;
 
@@ -39,10 +45,11 @@ $aAccess = curl_init() ;
 // 请求
 // set URL and other appropriate options
 curl_setopt($aAccess, CURLOPT_URL, $_REQUEST['url']);
-curl_setopt($aAccess, CURLOPT_HEADER, false);
+curl_setopt($aAccess, CURLOPT_HEADER, @$_REQUEST['debug']?true:false);
 curl_setopt($aAccess, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($aAccess, CURLOPT_FOLLOWLOCATION, 1);
-curl_setopt($aAccess, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($aAccess, CURLOPT_FOLLOWLOCATION, true);
+curl_setopt($aAccess, CURLOPT_SSL_VERIFYPEER, false);  
+curl_setopt($aAccess, CURLOPT_SSL_VERIFYHOST, false);  
 curl_setopt($aAccess, CURLOPT_TIMEOUT, 30);
 curl_setopt($aAccess, CURLOPT_COOKIEJAR, $sUserSessionFile);
 curl_setopt($aAccess, CURLOPT_COOKIEFILE, $sUserSessionFile);
@@ -98,6 +105,15 @@ foreach($arrResponseHeader as $sHeaderName=>$sHeaderLine)
 	header("{$sHeaderName}: {$sHeaderLine}") ;
 }
 
+// head code
+header($arrResponseHeader['CURLINFO_HTTP_CODE']) ;
+
+// location redirect 
+if( @$arrResponseHeader['location'] )
+{
+	header('Location: '.makeUrl($arrResponseHeader['location'])) ;
+}
+
 // 替换html中的路径
 if(empty($_REQUEST['bin']))
 {
@@ -126,24 +142,7 @@ if(empty($_REQUEST['bin']))
 
 function replace_html_path($arrMatche)
 {	
-	$sPath = $arrMatche[4] ;
-	
-	if( preg_match('|^https?://|',$sPath) )
-	{
-		// nothing .
-	}
-	else if( substr($sPath,0,1)=='/' )
-	{
-		global $sUrlRootPath ;
-		$sPath = $sUrlRootPath . $sPath ;
-	}
-	else
-	{
-		global $sUrlPath ;
-		$sPath = $sUrlPath . $sPath ;
-	}
-	
-	$sPath = 'http://'.$_SERVER['HTTP_HOST'].$_SERVER['SCRIPT_NAME'] . '?url=' . urlencode($sPath) ;
+	$sPath = makeUrl($arrMatche[4]) ;
 	if( strtolower($arrMatche[1])=='img' )
 	{
 		$sPath.= '&bin=1' ;
@@ -151,9 +150,32 @@ function replace_html_path($arrMatche)
 	
 	return "<{$arrMatche[1]} {$arrMatche[2]} {$arrMatche[3]}=\"{$sPath}\"" ;
 }
+function makeUrl($sUrl)
+{
+	if( preg_match('|^https?://|',$sUrl) )
+	{
+		// nothing .
+	}
+	else if( substr($sUrl,0,1)=='/' )
+	{
+		global $sUrlRootPath ;
+		$sUrl = $sUrlRootPath . $sUrl ;
+	}
+	else
+	{
+		global $sUrlPath ;
+		$sUrl = $sUrlPath . $sUrl ;
+	}
+	
+	return 'http://'.$_SERVER['HTTP_HOST'].$_SERVER['SCRIPT_NAME'] . '?url=' . urlencode($sUrl) ;
+}
 
 // close cURL resource, and free up system resources
 curl_close($aAccess);
 
 
 echo $sResponse ;
+
+?>
+<hr />
+by proxy 
